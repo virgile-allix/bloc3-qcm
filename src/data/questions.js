@@ -771,7 +771,8 @@ export const QUESTIONS = {
 export function buildQuestion(room, questionIndex) {
   const qIdx = room.questionIndices[questionIndex]
   const original = QUESTIONS[room.lot][qIdx]
-  const shuffle = room.shuffles[questionIndex]
+  const raw = room.shuffles[questionIndex]
+  const shuffle = typeof raw === 'string' ? raw.split(',').map(Number) : raw
   return {
     text: original.q,
     answers: shuffle.map((i) => original.a[i]),

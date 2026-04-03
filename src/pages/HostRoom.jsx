@@ -361,7 +361,7 @@ export default function HostRoom() {
 
   async function handleCreateRoom({ lot, startFrom, questionCount, timePerQuestion }) {
     const questionIndices = Array.from({ length: questionCount }, (_, i) => startFrom + i)
-    const shuffles = questionIndices.map(() => generateShuffle())
+    const shuffles = questionIndices.map(() => generateShuffle().join(','))
     await setDoc(doc(db, 'rooms', roomCode), {
       hostId,
       status: 'lobby',
