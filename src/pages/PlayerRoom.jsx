@@ -33,7 +33,7 @@ function JoinForm({ roomCode, onJoin, roomNotFound }) {
           <div className="error-box">
             <p>❌ Salle introuvable : <strong>{roomCode}</strong></p>
             <p>Vérifie le code ou attends que l'hôte crée la partie.</p>
-            <button className="btn btn-ghost" onClick={() => window.location.href = '/'}>Retour</button>
+            <button className="btn btn-ghost" onClick={() => window.location.hash = '/'}>Retour</button>
           </div>
         ) : (
           <form className="join-form" onSubmit={handleSubmit}>
@@ -210,7 +210,7 @@ function FinalViewPlayer({ players, myPlayerId }) {
           ))}
         </div>
 
-        <button className="btn btn-ghost btn-full" onClick={() => window.location.href = '/'}>
+        <button className="btn btn-ghost btn-full" onClick={() => window.location.hash = '/'}>
           Retour à l'accueil
         </button>
       </div>

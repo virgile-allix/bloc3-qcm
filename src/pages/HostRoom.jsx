@@ -14,13 +14,14 @@ function SetupForm({ onSubmit }) {
   const [startFrom, setStartFrom] = useState(0)
   const [questionCount, setQuestionCount] = useState(10)
   const [timePerQuestion, setTimePerQuestion] = useState(20)
+  const [hostName, setHostName] = useState('')
 
   const total = QUESTIONS[lot]?.length ?? 0
   const maxCount = total - startFrom
 
   function handleSubmit(e) {
     e.preventDefault()
-    onSubmit({ lot, startFrom, questionCount: Math.min(questionCount, maxCount), timePerQuestion })
+    onSubmit({ lot, startFrom, questionCount: Math.min(questionCount, maxCount), timePerQuestion, hostName: hostName.trim() || 'Hôte' })
   }
 
   return (
@@ -94,6 +95,18 @@ function SetupForm({ onSubmit }) {
             </div>
           </div>
 
+          <div className="form-group">
+            <label>Votre pseudo</label>
+            <input
+              className="input"
+              type="text"
+              placeholder="Entrez votre pseudo"
+              value={hostName}
+              onChange={(e) => setHostName(e.target.value)}
+              maxLength={20}
+            />
+          </div>
+
           <button type="submit" className="btn btn-create btn-full">
             Créer la salle
           </button>
@@ -104,7 +117,7 @@ function SetupForm({ onSubmit }) {
 }
 
 function LobbyView({ roomCode, players, onStart }) {
-  const url = `${window.location.origin}/play/${roomCode}`
+  const url = `${window.location.origin}${window.location.pathname}#/play/${roomCode}`
   const [copied, setCopied] = useState(false)
 
   function copyCode() {
@@ -170,7 +183,7 @@ function TimerBar({ timeLeft, totalTime }) {
   )
 }
 
-function QuestionViewHost({ question, questionNumber, totalQuestions, timeLeft, totalTime, answeredCount, playerCount, onSkip }) {
+function QuestionViewHost({ question, questionNumber, totalQuestions, timeLeft, totalTime, answeredCount, playerCount, onSkip, onAnswer, hostAnswered }) {
   return (
     <div className="page game-page">
       <div className="game-header">
@@ -183,14 +196,26 @@ function QuestionViewHost({ question, questionNumber, totalQuestions, timeLeft, 
         <p className="question-text">{question.text}</p>
       </div>
 
-      <div className="answer-grid">
-        {question.answers.map((ans, i) => (
-          <div key={i} className={`answer-tile answer-${ANSWER_COLORS[i]}`}>
-            <span className="answer-icon">{ANSWER_ICONS[i]}</span>
-            <span className="answer-text">{ans}</span>
-          </div>
-        ))}
-      </div>
+      {hostAnswered ? (
+        <div className="waiting-answer">
+          <div className="waiting-spinner">⏳</div>
+          <p>Réponse enregistrée !</p>
+          <p className="hint">En attente des autres joueurs…</p>
+        </div>
+      ) : (
+        <div className="answer-grid">
+          {question.answers.map((ans, i) => (
+            <button
+              key={i}
+              className={`answer-tile answer-${ANSWER_COLORS[i]} answer-clickable`}
+              onClick={() => onAnswer(i)}
+            >
+              <span className="answer-icon">{ANSWER_ICONS[i]}</span>
+              <span className="answer-text">{ans}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="host-controls">
         <button className="btn btn-ghost" onClick={onSkip}>⏭ Passer</button>
@@ -286,7 +311,7 @@ function FinalView({ players, roomCode }) {
 
         <button
           className="btn btn-ghost btn-full"
-          onClick={() => window.location.href = '/'}
+          onClick={() => { window.location.hash = '/' }}
         >
           Retour à l'accueil
         </button>
@@ -359,11 +384,12 @@ export default function HostRoom() {
 
   // ── Actions ──
 
-  async function handleCreateRoom({ lot, startFrom, questionCount, timePerQuestion }) {
+  async function handleCreateRoom({ lot, startFrom, questionCount, timePerQuestion, hostName }) {
     const questionIndices = Array.from({ length: questionCount }, (_, i) => startFrom + i)
     const shuffles = questionIndices.map(() => generateShuffle().join(','))
     await setDoc(doc(db, 'rooms', roomCode), {
       hostId,
+      hostName,
       status: 'lobby',
       lot,
       questionIndices,
@@ -376,10 +402,37 @@ export default function HostRoom() {
   }
 
   async function handleStartGame() {
+    await setDoc(doc(db, 'rooms', roomCode, 'players', hostId), {
+      name: room.hostName || 'Hôte',
+      score: 0,
+      joinedAt: Date.now(),
+      answeredQuestionIndex: null,
+      answerIndex: null,
+      answerCorrect: null,
+      answerPoints: null,
+    })
     await updateDoc(doc(db, 'rooms', roomCode), {
       status: 'question',
       currentQuestionIndex: 0,
       questionStartTime: Date.now(),
+    })
+  }
+
+  async function handleHostAnswer(answerIndex) {
+    if (!room) return
+    const q = buildQuestion(room, room.currentQuestionIndex)
+    const isCorrect = answerIndex === q.correct
+    const responseTime = Date.now() - room.questionStartTime
+    const timeLimitMs = room.timePerQuestion * 1000
+    const points = isCorrect ? Math.max(100, Math.round(1000 - (responseTime / timeLimitMs) * 900)) : 0
+    const me = players.find((p) => p.id === hostId)
+    const prevScore = me?.score ?? 0
+    await updateDoc(doc(db, 'rooms', roomCode, 'players', hostId), {
+      answeredQuestionIndex: room.currentQuestionIndex,
+      answerIndex,
+      answerCorrect: isCorrect,
+      answerPoints: points,
+      score: prevScore + points,
     })
   }
 
@@ -422,6 +475,7 @@ export default function HostRoom() {
   if (room.status === 'question') {
     const q = buildQuestion(room, room.currentQuestionIndex)
     const answered = players.filter((p) => p.answeredQuestionIndex === room.currentQuestionIndex).length
+    const hostAnswered = players.find((p) => p.id === hostId)?.answeredQuestionIndex === room.currentQuestionIndex
     return (
       <QuestionViewHost
         question={q}
@@ -432,6 +486,8 @@ export default function HostRoom() {
         answeredCount={answered}
         playerCount={players.length}
         onSkip={handleSkip}
+        onAnswer={handleHostAnswer}
+        hostAnswered={hostAnswered}
       />
     )
   }
