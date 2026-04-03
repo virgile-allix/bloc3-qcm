@@ -399,11 +399,8 @@ export default function HostRoom() {
       timePerQuestion,
       createdAt: Date.now(),
     })
-  }
-
-  async function handleStartGame() {
     await setDoc(doc(db, 'rooms', roomCode, 'players', hostId), {
-      name: room.hostName || 'Hôte',
+      name: hostName || 'Hôte',
       score: 0,
       joinedAt: Date.now(),
       answeredQuestionIndex: null,
@@ -411,6 +408,9 @@ export default function HostRoom() {
       answerCorrect: null,
       answerPoints: null,
     })
+  }
+
+  async function handleStartGame() {
     await updateDoc(doc(db, 'rooms', roomCode), {
       status: 'question',
       currentQuestionIndex: 0,

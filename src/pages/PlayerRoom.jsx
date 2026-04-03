@@ -231,8 +231,8 @@ export default function PlayerRoom() {
   const storedInfo = (() => {
     try { return JSON.parse(sessionStorage.getItem(`player_${roomCode}`) || 'null') } catch { return null }
   })()
-  const [playerId] = useState(storedInfo?.playerId || null)
-  const [playerName] = useState(storedInfo?.name || '')
+  const [playerId, setPlayerId] = useState(storedInfo?.playerId || null)
+  const [playerName, setPlayerName] = useState(storedInfo?.name || '')
 
   // Listeners Firestore
   useEffect(() => {
@@ -268,12 +268,20 @@ export default function PlayerRoom() {
   // ── Actions ──
 
   async function handleJoin(name) {
-    const stored = (() => {
-      try { return JSON.parse(sessionStorage.getItem(`player_${roomCode}`) || 'null') } catch { return null }
-    })()
-    const pid = stored?.playerId || Math.random().toString(36).slice(2) + Date.now().toString(36)
+    const pid = Math.random().toString(36).slice(2) + Date.now().toString(36)
     sessionStorage.setItem(`player_${roomCode}`, JSON.stringify({ playerId: pid, name }))
-    window.location.reload() // reload pour prendre en compte le nouveau state
+    await setDoc(doc(db, 'rooms', roomCode, 'players', pid), {
+      name,
+      score: 0,
+      joinedAt: Date.now(),
+      answeredQuestionIndex: null,
+      answerIndex: null,
+      answerCorrect: null,
+      answerPoints: null,
+    })
+    setPlayerId(pid)
+    setPlayerName(name)
+    setJoined(true)
   }
 
   async function handleAnswer(answerIndex) {
