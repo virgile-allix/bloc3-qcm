@@ -226,6 +226,7 @@ export default function PlayerRoom() {
   const [players, setPlayers] = useState([])
   const [timeLeft, setTimeLeft] = useState(0)
   const [joined, setJoined] = useState(false)
+  const [questionStartedAt, setQuestionStartedAt] = useState(null)
 
   // Récupère l'identité du joueur depuis sessionStorage
   const storedInfo = (() => {
@@ -252,18 +253,25 @@ export default function PlayerRoom() {
     if (found) setJoined(true)
   }, [players, playerId])
 
+  // Enregistre l'heure locale dès réception de la question (évite le décalage d'horloge avec l'hôte)
+  useEffect(() => {
+    if (room?.status === 'question') {
+      setQuestionStartedAt(Date.now())
+    }
+  }, [room?.status, room?.currentQuestionIndex])
+
   // Timer joueur
   useEffect(() => {
-    if (!room || room.status !== 'question') return
+    if (!room || room.status !== 'question' || !questionStartedAt) return
     const total = room.timePerQuestion * 1000
     const tick = () => {
-      const elapsed = Date.now() - room.questionStartTime
+      const elapsed = Date.now() - questionStartedAt
       setTimeLeft(Math.max(0, Math.ceil((total - elapsed) / 1000)))
     }
     tick()
     const interval = setInterval(tick, 200)
     return () => clearInterval(interval)
-  }, [room?.status, room?.questionStartTime, room?.currentQuestionIndex])
+  }, [room?.status, room?.currentQuestionIndex, questionStartedAt])
 
   // ── Actions ──
 
@@ -288,7 +296,7 @@ export default function PlayerRoom() {
     if (!room || !playerId) return
     const q = buildQuestion(room, room.currentQuestionIndex)
     const isCorrect = answerIndex === q.correct
-    const responseTime = Date.now() - room.questionStartTime
+    const responseTime = questionStartedAt ? Date.now() - questionStartedAt : room.timePerQuestion * 1000
     const timeLimitMs = room.timePerQuestion * 1000
     const points = isCorrect
       ? Math.max(100, Math.round(1000 - (responseTime / timeLimitMs) * 900))

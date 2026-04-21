@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { doc, onSnapshot, setDoc, updateDoc, collection } from 'firebase/firestore'
+import { doc, onSnapshot, setDoc, updateDoc, deleteDoc, collection } from 'firebase/firestore'
 import { db } from '../firebase'
 import { QUESTIONS, buildQuestion, generateShuffle } from '../data/questions'
 
@@ -277,7 +277,7 @@ function RevealViewHost({ question, players, currentQuestionIndex, onNext, isLas
   )
 }
 
-function FinalView({ players, roomCode }) {
+function FinalView({ players, roomCode, onDelete }) {
   const sorted = [...players].sort((a, b) => b.score - a.score)
   const medals = ['🥇', '🥈', '🥉']
 
@@ -315,6 +315,13 @@ function FinalView({ players, roomCode }) {
         >
           Retour à l'accueil
         </button>
+        <button
+          className="btn btn-danger btn-full"
+          style={{ marginTop: '0.5rem' }}
+          onClick={onDelete}
+        >
+          Supprimer la salle
+        </button>
       </div>
     </div>
   )
@@ -329,6 +336,7 @@ export default function HostRoom() {
   const [players, setPlayers] = useState([])
   const [loading, setLoading] = useState(true)
   const [timeLeft, setTimeLeft] = useState(0)
+  const [questionStartedAt, setQuestionStartedAt] = useState(null)
   const revealLock = useRef(false)
 
   const hostId = (() => {
@@ -350,14 +358,21 @@ export default function HostRoom() {
     return () => { unsubRoom(); unsubPlayers() }
   }, [roomCode])
 
+  // Enregistre l'heure locale dès réception de la question (évite le décalage d'horloge)
+  useEffect(() => {
+    if (room?.status === 'question') {
+      setQuestionStartedAt(Date.now())
+      revealLock.current = false
+    }
+  }, [room?.status, room?.currentQuestionIndex])
+
   // Timer côté hôte
   useEffect(() => {
-    if (!room || room.status !== 'question') return
-    revealLock.current = false
+    if (!room || room.status !== 'question' || !questionStartedAt) return
 
     const total = room.timePerQuestion * 1000
     const tick = () => {
-      const elapsed = Date.now() - room.questionStartTime
+      const elapsed = Date.now() - questionStartedAt
       const left = Math.max(0, total - elapsed)
       setTimeLeft(Math.ceil(left / 1000))
       if (left <= 0 && !revealLock.current) {
@@ -368,7 +383,7 @@ export default function HostRoom() {
     tick()
     const interval = setInterval(tick, 200)
     return () => clearInterval(interval)
-  }, [room?.status, room?.questionStartTime, room?.currentQuestionIndex])
+  }, [room?.status, room?.currentQuestionIndex, questionStartedAt])
 
   // Auto-reveal quand tous les joueurs ont répondu
   useEffect(() => {
@@ -422,7 +437,7 @@ export default function HostRoom() {
     if (!room) return
     const q = buildQuestion(room, room.currentQuestionIndex)
     const isCorrect = answerIndex === q.correct
-    const responseTime = Date.now() - room.questionStartTime
+    const responseTime = questionStartedAt ? Date.now() - questionStartedAt : room.timePerQuestion * 1000
     const timeLimitMs = room.timePerQuestion * 1000
     const points = isCorrect ? Math.max(100, Math.round(1000 - (responseTime / timeLimitMs) * 900)) : 0
     const me = players.find((p) => p.id === hostId)
@@ -445,7 +460,7 @@ export default function HostRoom() {
   async function handleNext() {
     const next = room.currentQuestionIndex + 1
     if (next >= room.questionIndices.length) {
-      await updateDoc(doc(db, 'rooms', roomCode), { status: 'finished' })
+      await updateDoc(doc(db, 'rooms', roomCode), { status: 'finished', finishedAt: Date.now() })
     } else {
       await updateDoc(doc(db, 'rooms', roomCode), {
         status: 'question',
@@ -453,6 +468,14 @@ export default function HostRoom() {
         questionStartTime: Date.now(),
       })
     }
+  }
+
+  async function handleDeleteRoom() {
+    for (const p of players) {
+      await deleteDoc(doc(db, 'rooms', roomCode, 'players', p.id))
+    }
+    await deleteDoc(doc(db, 'rooms', roomCode))
+    window.location.hash = '/'
   }
 
   // ── Rendu ──
@@ -506,7 +529,7 @@ export default function HostRoom() {
   }
 
   if (room.status === 'finished') {
-    return <FinalView players={sortedPlayers} roomCode={roomCode} />
+    return <FinalView players={sortedPlayers} roomCode={roomCode} onDelete={handleDeleteRoom} />
   }
 
   return null
